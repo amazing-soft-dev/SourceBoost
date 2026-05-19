@@ -13,6 +13,7 @@ public static class GameData
     public static Dictionary<int, BreakLevelLimitExcel> BreakLevelLimitData { get; private set; } = [];
     public static Dictionary<int, RecycleExcel> RecycleData { get; private set; } = [];
     public static Dictionary<uint, ChapterLevelExcel> ChapterLevelData { get; private set; } = [];
+    public static Dictionary<uint, RoleLevelExcel> RoleLevelData { get; private set; } = [];
     public static Dictionary<uint, ArItemExcel> ArItemData { get; private set; } = [];
     public static Dictionary<uint, ManifestationExcel> ManifestationData { get; private set; } = [];
     public static Dictionary<uint, Rogue3DDifficultExcel> Rogue3DDifficultData { get; private set; } = [];

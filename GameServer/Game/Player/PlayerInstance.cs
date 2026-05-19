@@ -425,6 +425,14 @@ public class PlayerInstance(PlayerGameData data)
             yield return (22, levelId, 1_700_000_000);
         }
 
+        // Role fragment chapters use Condition.PRE_LEVEL against Launch.GPASSID as well.
+        // Mark every role level as cleared so character-specific stages beyond the first one unlock.
+        foreach (var levelId in GameData.RoleLevelData.Keys)
+        {
+            yield return (21, levelId, 7);
+            yield return (22, levelId, 1_700_000_000);
+        }
+
         foreach (var guide in GameData.GuideData.Values)
         {
             yield return (4, guide.ID, 999);
