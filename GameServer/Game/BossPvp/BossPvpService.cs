@@ -2,16 +2,15 @@ using MikuSB.Data;
 using MikuSB.Data.Excel;
 using MikuSB.Database.Inventory;
 using MikuSB.GameServer.Game.Player;
-using MikuSB.GameServer.Server.CallGS;
 using MikuSB.Proto;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
-namespace MikuSB.GameServer.Server.CallGS.Handlers.BossPvp;
+namespace MikuSB.GameServer.Game.BossPvp;
 
-internal static class BossPvpShared
+internal static class BossPvpService
 {
     private const uint GroupId = 51;
     private const uint ActivitySubId = 0;
@@ -27,9 +26,8 @@ internal static class BossPvpShared
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
-    public static async ValueTask<(object Response, NtfSyncPlayer Sync)> HandleGetOpenIdAsync(Connection connection)
+    public static async ValueTask<(object Response, NtfSyncPlayer Sync)> HandleGetOpenIdAsync(PlayerInstance player)
     {
-        var player = connection.Player!;
         await EnsureBossLineupsAsync(player);
 
         var sync = new NtfSyncPlayer();
