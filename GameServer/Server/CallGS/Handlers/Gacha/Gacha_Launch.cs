@@ -26,6 +26,8 @@ public class Gacha_Launch : ICallGSHandler
     private const uint SidAddTimeProb = 2;
     private const uint SidAddProtectType = 3;
     private const uint SidAddTotalTime = 7;
+    private const int UpSelectIndex = 0;
+    private const int UpSelectGetFlagIndex = 1;
     private static readonly Random Rng = new();
 
     public async Task Handle(Connection connection, string param, ushort seqNo)
@@ -58,6 +60,7 @@ public class Gacha_Launch : ICallGSHandler
         }
 
         var pityState = LoadPityState(player, gachaCfg);
+        var upSelectState = LoadUpSelectState(player, gachaCfg);
         var config = BuildRuntimeConfig(gachaCfg, poolNames);
         var awards = new List<List<uint>>();
         var tbNew = new List<int>();
@@ -94,6 +97,18 @@ public class Gacha_Launch : ICallGSHandler
                 trigger = forceTopUp && item != null && config.UpTarget != null && item.Rarity == config.UpTarget.Rarity;
             }
 
+            if (item != null && upSelectState.SelectedItem != null && item.Rarity >= config.TopRarity)
+            {
+                bool forceSelected = upSelectState.GuaranteedNext;
+                bool shouldSelect = forceSelected || Rng.Next(100) < 50;
+                if (shouldSelect)
+                {
+                    var selectedItem = FindExactItem(allPoolItems, upSelectState.SelectedItem);
+                    if (selectedItem != null && selectedItem.Rarity >= config.TopRarity)
+                        item = selectedItem;
+                }
+            }
+
             if (item == null || item.GDPL.Count < 4)
             {
                 tbTrigger.Add(false);
@@ -109,6 +124,7 @@ public class Gacha_Launch : ICallGSHandler
             tbTrigger.Add(trigger);
 
             UpdatePityState(pityState, config, item);
+            UpdateUpSelectState(upSelectState, config, item);
 
             var itemType = (ItemTypeEnum)g;
             switch (itemType)
@@ -149,6 +165,7 @@ public class Gacha_Launch : ICallGSHandler
         }
 
         SavePityState(player, gachaCfg, pityState, awards.Count, sync);
+        SaveUpSelectState(player, gachaCfg, upSelectState, sync);
         DatabaseHelper.SaveDatabaseType(player.Data);
         DatabaseHelper.SaveDatabaseType(player.InventoryManager.InventoryData);
         DatabaseHelper.SaveDatabaseType(player.CharacterManager.CharacterData);
@@ -180,6 +197,14 @@ public class Gacha_Launch : ICallGSHandler
     }
 
     private static GachaPoolItem? FindPoolItemByGdpl(List<GachaPoolItem> pool, List<uint> gdpl) =>
+        pool.FirstOrDefault(x =>
+            x.GDPL.Count >= 4 &&
+            x.GDPL[0] == gdpl[0] &&
+            x.GDPL[1] == gdpl[1] &&
+            x.GDPL[2] == gdpl[2] &&
+            x.GDPL[3] == gdpl[3]);
+
+    private static GachaPoolItem? FindExactItem(List<GachaPoolItem> pool, uint[] gdpl) =>
         pool.FirstOrDefault(x =>
             x.GDPL.Count >= 4 &&
             x.GDPL[0] == gdpl[0] &&
@@ -271,6 +296,56 @@ public class Gacha_Launch : ICallGSHandler
         SetAttr(player, sync, GachaGid, baseSid + SidAddTotalTime, (uint)(state.PoolTotalTime + drawCount));
     }
 
+    private static GachaUpSelectState LoadUpSelectState(PlayerInstance player, GachaExcel gachaCfg)
+    {
+        if (gachaCfg.UpSelect != 1)
+            return new GachaUpSelectState();
+
+        var raw = player.Data.StrAttrs.FirstOrDefault(x => x.Gid == GachaSgid && x.Sid == gachaCfg.ID)?.Val;
+        if (string.IsNullOrWhiteSpace(raw))
+            return new GachaUpSelectState();
+
+        try
+        {
+            var state = JArray.Parse(raw);
+            uint[]? selected = null;
+            if (state.Count > UpSelectIndex && state[UpSelectIndex] is JArray selectedArray && selectedArray.Count >= 4)
+            {
+                selected =
+                [
+                    selectedArray[0]?.Value<uint>() ?? 0,
+                    selectedArray[1]?.Value<uint>() ?? 0,
+                    selectedArray[2]?.Value<uint>() ?? 0,
+                    selectedArray[3]?.Value<uint>() ?? 0
+                ];
+            }
+
+            return new GachaUpSelectState
+            {
+                SelectedItem = selected,
+                GuaranteedNext = state.Count > UpSelectGetFlagIndex && (state[UpSelectGetFlagIndex]?.Value<int>() ?? 0) == 1,
+                RawState = state
+            };
+        }
+        catch
+        {
+            return new GachaUpSelectState();
+        }
+    }
+
+    private static void SaveUpSelectState(PlayerInstance player, GachaExcel gachaCfg, GachaUpSelectState state, NtfSyncPlayer sync)
+    {
+        if (gachaCfg.UpSelect != 1 || state.RawState == null)
+            return;
+
+        EnsureArraySize(state.RawState, 2);
+        state.RawState[UpSelectGetFlagIndex] = state.GuaranteedNext ? 1 : 0;
+
+        var value = state.RawState.ToString(Newtonsoft.Json.Formatting.None);
+        player.SetStrAttr(GachaSgid, gachaCfg.ID, value);
+        sync.CustomStr[player.ToShiftedAttrKey(GachaSgid, gachaCfg.ID)] = value;
+    }
+
     private static uint GetBaseSid(GachaExcel gachaCfg)
     {
         if (gachaCfg.ProtectTag.HasValue)
@@ -315,6 +390,27 @@ public class Gacha_Launch : ICallGSHandler
         {
             state.ItemCount++;
         }
+    }
+
+    private static void UpdateUpSelectState(GachaUpSelectState state, GachaRuntimeConfig config, GachaPoolItem item)
+    {
+        if (state.SelectedItem == null || item.Rarity < config.TopRarity)
+            return;
+
+        state.GuaranteedNext = !MatchesGdpl(item, state.SelectedItem);
+    }
+
+    private static bool MatchesGdpl(GachaPoolItem item, uint[] gdpl) =>
+        item.GDPL.Count >= 4 &&
+        item.GDPL[0] == gdpl[0] &&
+        item.GDPL[1] == gdpl[1] &&
+        item.GDPL[2] == gdpl[2] &&
+        item.GDPL[3] == gdpl[3];
+
+    private static void EnsureArraySize(JArray state, int size)
+    {
+        while (state.Count < size)
+            state.Add(JValue.CreateNull());
     }
 
     private static bool IsFromPool(GachaPoolItem item, PoolRarityRef target) =>
@@ -444,6 +540,13 @@ internal sealed class GachaRuntimeConfig
     public PoolRarityRef? UpTarget { get; set; }
     public int TopRarity { get; set; }
     public int TenGuaranteeRarity { get; set; }
+}
+
+internal sealed class GachaUpSelectState
+{
+    public uint[]? SelectedItem { get; set; }
+    public bool GuaranteedNext { get; set; }
+    public JArray? RawState { get; set; } = new();
 }
 
 internal sealed record PoolRarityRef(string PoolName, int Rarity);

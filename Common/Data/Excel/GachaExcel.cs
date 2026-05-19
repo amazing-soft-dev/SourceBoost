@@ -16,6 +16,7 @@ public class GachaExcel : ExcelResource
     public uint? ProtectTag { get; set; }
     public uint? ProtectType { get; set; }
     public JToken? ProtectCount { get; set; }
+    public uint? UpSelect { get; set; }
 
     public override uint GetId() => ID;
     public override void Loaded() => GameData.GachaData[ID] = this;
@@ -41,4 +42,5 @@ public class GachaPoolItem
     public List<uint> GDPL { get; set; } = [];
     public int Weight { get; set; }
     public int? UPTag { get; set; }
+    public int? UPSelectTag { get; set; }
 }
