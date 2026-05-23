@@ -50,6 +50,9 @@ public static class GameData
     public static Dictionary<uint, GachaExcel> GachaData { get; private set; } = [];
     public static Dictionary<uint, GachaProbabilityExcel> GachaProbabilityData { get; private set; } = [];
     public static Dictionary<string, List<GachaPoolItem>> GachaPoolData { get; private set; } = [];
+    public static Dictionary<uint, VirCaptureTimeExcel> VirCaptureTimeData { get; private set; } = [];
+    public static Dictionary<uint, VirCaptureSeasonExcel> VirCaptureSeasonData { get; private set; } = [];
+    public static Dictionary<uint, VirCaptureTrialTimeExcel> VirCaptureTrialTimeData { get; private set; } = [];
 }
 
 public static class GameResourceTemplateId
