@@ -38,6 +38,7 @@ public static class GameData
     public static Dictionary<uint, Dictionary<int, ClimbTowerAwardExcel>> ClimbTowerAwardData { get; private set; } = [];
     public static Dictionary<uint, ClimbTowerLevelOrderExcel> ClimbTowerLevelOrderData { get; private set; } = [];
     public static Dictionary<uint, TowerLevelExcel> TowerLevelData { get; private set; } = [];
+    public static Dictionary<uint, TowerEventLevelExcel> TowerEventLevelData { get; private set; } = [];
     public static Dictionary<uint, OtherItemExcel> OtherItemData { get; private set; } = [];
     public static Dictionary<uint, ProfileExcel> ProfileData { get; private set; } = [];
     public static Dictionary<uint, CardSkinPartsExcel> CardSkinPartsData { get; private set; } = [];

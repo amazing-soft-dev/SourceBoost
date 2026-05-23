@@ -65,6 +65,13 @@ public class Chapter_DealLevelSettlement : ICallGSHandler
             return response;
         }
 
+        if (string.Equals(sCmd, "TowerEventChapter_LevelSettlement", StringComparison.Ordinal))
+        {
+            var (response, sync) = TowerEventChapter_LevelSettlement.HandleSettlement(connection.Player!, tbParam);
+            extraSync = sync;
+            return response;
+        }
+
         return tbParam?.DeepClone() ?? new JsonObject();
     }
 
