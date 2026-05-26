@@ -6,6 +6,7 @@ using MikuSB.Database.Player;
 using MikuSB.Enums.Item;
 using MikuSB.GameServer.Game.Player;
 using MikuSB.Proto;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
@@ -17,11 +18,21 @@ public class IBLogic_BuyGoods : ICallGSHandler
 {
     private const uint BuyGroupId = 26;
     private const uint RedGroupId = 113;
+    private const uint CashGroupId = 1;
+    private const uint BattlePassGroupId = 25;
+    private const uint BattlePassCurIdSid = 1;
+    private const uint BattlePassStatusSid = 2;
 
     public async Task Handle(Connection connection, string param, ushort seqNo)
     {
         var req = JsonSerializer.Deserialize<IbBuyGoodsParam>(param);
         var player = connection.Player!;
+        if (req?.Type == 3 && req.GoodsId > 0 && req.Count > 0)
+        {
+            await HandleBattlePassPurchase(connection, player, req);
+            return;
+        }
+
         if (req == null ||
             req.GoodsId == 0 ||
             req.Count == 0 ||
@@ -89,6 +100,46 @@ public class IBLogic_BuyGoods : ICallGSHandler
         var cost = req.Index == 2 ? goods.Cost2 : goods.Cost;
         if (cost.Count >= 2)
             rsp["nTotalPrice"] = (int)cost[1];
+
+        await CallGSRouter.SendScript(connection, "IBLogic_BuyGoods", rsp.ToJsonString(), sync);
+    }
+
+    private static async Task HandleBattlePassPurchase(Connection connection, PlayerInstance player, IbBuyGoodsParam req)
+    {
+        var sync = new NtfSyncPlayer();
+        var battlePassId = ResolveCurrentBattlePassId();
+        if (battlePassId > 0)
+        {
+            var curIdAttr = GetOrCreateAttr(player, BattlePassGroupId, BattlePassCurIdSid);
+            curIdAttr.Val = battlePassId;
+            SyncAttr(player, sync, curIdAttr);
+        }
+
+        var statusAttr = GetOrCreateAttr(player, BattlePassGroupId, BattlePassStatusSid);
+        if (statusAttr.Val < 2)
+        {
+            statusAttr.Val = 2;
+            SyncAttr(player, sync, statusAttr);
+        }
+
+        var buyCountAttr = GetOrCreateAttr(player, BuyGroupId, req.GoodsId);
+        buyCountAttr.Val += req.Count;
+        SyncAttr(player, sync, buyCountAttr);
+
+        var redAttr = GetOrCreateAttr(player, RedGroupId, req.GoodsId);
+        if (redAttr.Val == 0)
+        {
+            redAttr.Val = 1;
+            SyncAttr(player, sync, redAttr);
+        }
+
+        DatabaseHelper.SaveDatabaseType(player.Data);
+
+        var rsp = new JsonObject
+        {
+            ["nGoodsId"] = (int)req.GoodsId,
+            ["tbGoods"] = new JsonArray()
+        };
 
         await CallGSRouter.SendScript(connection, "IBLogic_BuyGoods", rsp.ToJsonString(), sync);
     }
@@ -169,9 +220,12 @@ public class IBLogic_BuyGoods : ICallGSHandler
             }
             case ItemTypeEnum.TYPE_USEABLE:
             {
-                var item = AddOtherItem(player.InventoryManager.InventoryData, reward[0], detail, particular, level, count);
-                if (item != null)
-                    sync.Items.Add(item.ToProto());
+                if (!TryGrantCashBox(player, sync, detail, particular, level, count))
+                {
+                    var item = AddOtherItem(player.InventoryManager.InventoryData, reward[0], detail, particular, level, count);
+                    if (item != null)
+                        sync.Items.Add(item.ToProto());
+                }
                 break;
             }
             case ItemTypeEnum.TYPE_WEAPON_PART:
@@ -279,6 +333,78 @@ public class IBLogic_BuyGoods : ICallGSHandler
         };
         inventory.Items[item.UniqueId] = item;
         return item;
+    }
+
+    private static bool TryGrantCashBox(PlayerInstance player, NtfSyncPlayer sync, uint detail, uint particular, uint level, uint count)
+    {
+        var templateId = (uint)GameResourceTemplateId.FromGdpl((uint)ItemTypeEnum.TYPE_USEABLE, detail, particular, level);
+        if (!GameData.OtherItemData.TryGetValue(templateId, out var otherItem))
+            return false;
+
+        uint moneyType = otherItem.LuaType switch
+        {
+            "money_box" => 1,
+            "gold_box" => 2,
+            "silver_box" => 3,
+            "vigor_box" => 4,
+            _ => 0
+        };
+
+        if (moneyType == 0 || otherItem.Param1 == 0)
+            return false;
+
+        var amount = checked(otherItem.Param1 * count);
+        var sid = moneyType * 2 + 1;
+        var attr = GetOrCreateAttr(player, CashGroupId, sid);
+        attr.Val += amount;
+        SyncAttr(player, sync, attr);
+        if (moneyType == 1)
+        {
+            foreach (var (key, value) in player.BuildMoneySync())
+                sync.Money[key] = value;
+        }
+        return true;
+    }
+
+    private static uint ResolveCurrentBattlePassId()
+    {
+        var now = DateTime.Now;
+        var parsed = GameData.BattlePassTimeData.Values
+            .Select(x => new
+            {
+                Config = x,
+                Start = ParseConfigTime(x.StartTime),
+                End = ParseConfigTime(x.EndTime)
+            })
+            .Where(x => x.Start.HasValue && x.End.HasValue)
+            .OrderBy(x => x.Start)
+            .ToList();
+
+        var current = parsed.FirstOrDefault(x => x.Start <= now && now < x.End);
+        if (current != null)
+            return current.Config.Id;
+
+        var latestStarted = parsed.LastOrDefault(x => x.Start <= now && x.End > x.Start);
+        return latestStarted?.Config.Id ?? 0;
+    }
+
+    private static DateTime? ParseConfigTime(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+
+        var normalized = raw.Trim().Trim('[', ']');
+        if (normalized.Length != 12)
+            return null;
+
+        return DateTime.TryParseExact(
+            normalized,
+            "yyyyMMddHHmm",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.None,
+            out var value)
+            ? value
+            : null;
     }
 
     private static PlayerAttr GetOrCreateAttr(PlayerInstance player, uint gid, uint sid)
