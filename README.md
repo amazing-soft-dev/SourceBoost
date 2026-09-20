@@ -100,4 +100,4 @@ MikuSB was developed for educational and research purposes.
 - This repository does not include any copyrighted game assets, binaries, or master data.  
 - Use this software at your own risk. The authors assume no responsibility for any damages or legal consequences resulting from its use.  
 
-If you are a rights holder and have any concerns regarding this software, please contact `devilpromt` or `kei_luna` on Discord.
+If you are a rights holder and have any concerns regarding this software, please contact `devilpromt` or `kei_luna_re` on Discord.
